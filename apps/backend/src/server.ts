@@ -1,11 +1,11 @@
+import dotenv from 'dotenv'
+dotenv.config()
+
 import express from 'express'
 import cors from 'cors'
-import dotenv from 'dotenv'
 import { extractRouter } from './routes/extract.js'
 import { sessionsRouter } from './routes/sessions.js'
 import { initializeDatabase } from './db/client.js'
-
-dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 3001

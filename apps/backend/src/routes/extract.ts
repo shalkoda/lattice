@@ -6,12 +6,20 @@ import { eventStore } from '../services/event-store.js'
 
 export const extractRouter = Router()
 
-// Initialize OpenAI extractor
-const apiKey = process.env.OPENAI_API_KEY
-if (!apiKey) {
-  console.warn('⚠️  OPENAI_API_KEY not set - extraction will fail')
+// Extractor will be initialized lazily
+let extractor: OpenAIExtractor | null = null
+
+function getExtractor(): OpenAIExtractor | null {
+  if (!extractor) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      console.warn('⚠️  OPENAI_API_KEY not set - extraction will fail')
+      return null
+    }
+    extractor = new OpenAIExtractor(apiKey)
+  }
+  return extractor
 }
-const extractor = apiKey ? new OpenAIExtractor(apiKey) : null
 
 // POST /api/extract - Extract architecture from conversation
 extractRouter.post('/', async (req, res) => {
@@ -25,6 +33,7 @@ extractRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'sessionId and conversationEvents required' })
     }
 
+    const extractor = getExtractor()
     if (!extractor) {
       return res.status(500).json({ error: 'Extractor not initialized - check OPENAI_API_KEY' })
     }
