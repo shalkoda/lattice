@@ -1,7 +1,8 @@
 import { Router } from 'express'
-import type { ConversationEvent, ArchitectureEvent } from '@lattice/domain'
+import type { ConversationEvent } from '@lattice/domain'
 import { OpenAIExtractor } from '@lattice/extractor'
 import { reduceArchitecture } from '@lattice/architecture-core'
+import { eventStore } from '../services/event-store.js'
 
 export const extractRouter = Router()
 
@@ -11,12 +12,6 @@ if (!apiKey) {
   console.warn('⚠️  OPENAI_API_KEY not set - extraction will fail')
 }
 const extractor = apiKey ? new OpenAIExtractor(apiKey) : null
-
-// In-memory state for Break 1 (will be replaced with DB in Break 2)
-const sessions: Map<string, {
-  conversationEvents: ConversationEvent[]
-  architectureEvents: ArchitectureEvent[]
-}> = new Map()
 
 // POST /api/extract - Extract architecture from conversation
 extractRouter.post('/', async (req, res) => {
@@ -34,34 +29,35 @@ extractRouter.post('/', async (req, res) => {
       return res.status(500).json({ error: 'Extractor not initialized - check OPENAI_API_KEY' })
     }
 
-    // Get or create session
-    if (!sessions.has(sessionId)) {
-      sessions.set(sessionId, {
-        conversationEvents: [],
-        architectureEvents: []
-      })
+    // Verify session exists
+    const session = await eventStore.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
     }
 
-    const session = sessions.get(sessionId)!
+    // Save new conversation events
+    await eventStore.saveConversationEvents(conversationEvents)
 
-    // Store conversation events
-    session.conversationEvents.push(...conversationEvents)
+    // Get all conversation and architecture events for this session
+    const allConversationEvents = await eventStore.getConversationEvents(sessionId)
+    const allArchitectureEvents = await eventStore.getArchitectureEvents(sessionId)
 
     // Get current architecture state from events
-    const currentState = reduceArchitecture(session.architectureEvents)
+    const currentState = reduceArchitecture(allArchitectureEvents)
 
     // Extract new architecture events
     const newArchitectureEvents = await extractor.extract({
-      conversationEvents: session.conversationEvents,
+      conversationEvents: allConversationEvents,
       currentState,
-      recentEvents: session.architectureEvents.slice(-5)
+      recentEvents: allArchitectureEvents.slice(-5)
     })
 
-    // Store new architecture events
-    session.architectureEvents.push(...newArchitectureEvents)
+    // Save new architecture events
+    await eventStore.saveArchitectureEvents(newArchitectureEvents)
 
     // Return new events and updated state
-    const updatedState = reduceArchitecture(session.architectureEvents)
+    const updatedArchitectureEvents = await eventStore.getArchitectureEvents(sessionId)
+    const updatedState = reduceArchitecture(updatedArchitectureEvents)
 
     res.json({
       architectureEvents: newArchitectureEvents,
@@ -71,23 +67,4 @@ extractRouter.post('/', async (req, res) => {
     console.error('Extract error:', error)
     res.status(500).json({ error: 'Failed to extract architecture' })
   }
-})
-
-// GET /api/extract/:sessionId - Get current state
-extractRouter.get('/:sessionId', (req, res) => {
-  const { sessionId } = req.params
-
-  const session = sessions.get(sessionId)
-
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' })
-  }
-
-  const currentState = reduceArchitecture(session.architectureEvents)
-
-  res.json({
-    conversationEvents: session.conversationEvents,
-    architectureEvents: session.architectureEvents,
-    currentState
-  })
 })
