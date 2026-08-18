@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { TranscriptPanel } from './components/TranscriptPanel'
 import { ArchitectureCanvas } from './components/ArchitectureCanvas'
+import { AudioRecorder } from './components/AudioRecorder'
 import { useArchitectureStore } from './store/architecture'
 import './App.css'
 
@@ -19,6 +20,7 @@ function App() {
       </header>
       <main className="app-main">
         <div className="panel-left">
+          <AudioRecorder />
           <TranscriptPanel />
         </div>
         <div className="panel-right">
