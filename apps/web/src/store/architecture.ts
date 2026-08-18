@@ -8,7 +8,7 @@ import type {
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 type ArchitectureStore = {
-  sessionId: string
+  sessionId: string | null
   conversationEvents: ConversationEvent[]
   architectureEvents: ArchitectureEvent[]
   currentState: ArchitectureState
@@ -16,20 +16,107 @@ type ArchitectureStore = {
   error: string | null
 
   // Actions
+  initialize: () => Promise<void>
+  loadSession: (sessionId: string) => Promise<void>
   addConversation: (content: string, speakerId?: string) => Promise<void>
-  reset: () => void
+  createNewSession: () => Promise<void>
 }
 
 export const useArchitectureStore = create<ArchitectureStore>((set, get) => ({
-  sessionId: crypto.randomUUID(),
+  sessionId: null,
   conversationEvents: [],
   architectureEvents: [],
   currentState: { nodes: {}, edges: {} },
   isLoading: false,
   error: null,
 
+  initialize: async () => {
+    // Check localStorage for existing session
+    const savedSessionId = localStorage.getItem('lattice_session_id')
+
+    if (savedSessionId) {
+      // Load existing session
+      await get().loadSession(savedSessionId)
+    } else {
+      // Create new session
+      await get().createNewSession()
+    }
+  },
+
+  loadSession: async (sessionId: string) => {
+    set({ isLoading: true, error: null })
+
+    try {
+      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`)
+
+      if (!response.ok) {
+        throw new Error('Session not found')
+      }
+
+      const data = await response.json()
+
+      set({
+        sessionId,
+        conversationEvents: data.conversationEvents || [],
+        architectureEvents: data.architectureEvents || [],
+        currentState: data.currentState || { nodes: {}, edges: {} },
+        isLoading: false
+      })
+
+      localStorage.setItem('lattice_session_id', sessionId)
+    } catch (error) {
+      console.error('Load session error:', error)
+      // If load fails, create new session
+      await get().createNewSession()
+    }
+  },
+
+  createNewSession: async () => {
+    set({ isLoading: true, error: null })
+
+    try {
+      const response = await fetch(`${API_URL}/api/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: 'Architecture Session'
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create session')
+      }
+
+      const data = await response.json()
+      const sessionId = data.session.id
+
+      set({
+        sessionId,
+        conversationEvents: [],
+        architectureEvents: [],
+        currentState: { nodes: {}, edges: {} },
+        isLoading: false
+      })
+
+      localStorage.setItem('lattice_session_id', sessionId)
+    } catch (error) {
+      console.error('Create session error:', error)
+      set({
+        error: error instanceof Error ? error.message : 'Unknown error',
+        isLoading: false
+      })
+    }
+  },
+
   addConversation: async (content: string, speakerId?: string) => {
-    const { sessionId, conversationEvents } = get()
+    const { sessionId } = get()
+
+    if (!sessionId) {
+      await get().createNewSession()
+      return get().addConversation(content, speakerId)
+    }
 
     // Create a new conversation event
     const newEvent: ConversationEvent = {
@@ -41,7 +128,6 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => ({
       createdAt: new Date().toISOString()
     }
 
-    // Optimistically add to local state
     set({ isLoading: true, error: null })
 
     try {
@@ -63,16 +149,8 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => ({
 
       const data = await response.json()
 
-      // Update state with new events and current state
-      set({
-        conversationEvents: [...conversationEvents, newEvent],
-        architectureEvents: [
-          ...get().architectureEvents,
-          ...(data.architectureEvents || [])
-        ],
-        currentState: data.currentState || get().currentState,
-        isLoading: false
-      })
+      // Reload full session state to get all events
+      await get().loadSession(sessionId)
     } catch (error) {
       console.error('Extract error:', error)
       set({
@@ -80,16 +158,5 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => ({
         isLoading: false
       })
     }
-  },
-
-  reset: () => {
-    set({
-      sessionId: crypto.randomUUID(),
-      conversationEvents: [],
-      architectureEvents: [],
-      currentState: { nodes: {}, edges: {} },
-      isLoading: false,
-      error: null
-    })
   }
 }))
