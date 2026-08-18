@@ -123,7 +123,9 @@ const SYSTEM_PROMPT = `You are an architecture extraction assistant. Your job is
 RULES:
 1. Extract ONLY architecture components (databases, services, clients, caches, queues, external systems)
 2. Extract relationships/connections between components
-3. For Break 1, mark everything as "accepted" (we'll add proposal detection in Break 3)
+3. CRITICAL: Distinguish proposals from decisions based on language:
+   - PROPOSALS: "maybe", "could", "might", "what about", "perhaps", "we should consider", "how about"
+   - DECISIONS: "let's use", "we'll use", "use", "going with", "decided on", "will use"
 4. Generate stable IDs: use format "{kind}-{normalized-label}" (e.g., "database-postgres", "service-fastapi")
 5. DO NOT generate Mermaid diagrams, SVG, or layout coordinates
 6. Output ONLY valid JSON matching the schema below
@@ -143,6 +145,16 @@ EDGE KINDS:
 - publish/consume: Message queue patterns
 - dependency: General dependencies
 - generic: Other relationships
+
+STATUS DETECTION:
+- "proposed": Tentative suggestions, possibilities, options being considered
+- "accepted": Definite decisions, commitments, choices made
+
+EXAMPLES:
+"Maybe Redis would help" → status: "proposed"
+"Let's use Redis" → status: "accepted"
+"We could try Kafka" → status: "proposed"
+"We'll use Postgres" → status: "accepted"
 
 OUTPUT SCHEMA:
 {
